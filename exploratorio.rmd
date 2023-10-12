@@ -1,0 +1,91 @@
+---
+title: "Análisis exploratorio"
+author: "Tamara Ricardo"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
+```
+
+```{r}
+# Carga paquetes ----------------------------------------------------------
+pacman::p_load(
+  # Statistical analysis
+  glmmTMB, 
+  survival,
+  # Inference and residuals
+  DHARMa,
+  performance,
+  # Exploratory analysis
+  compareGroups,
+  gtsummary,
+  dlookr,
+  # Read files
+  rio,
+  # Data cleaning
+  janitor,
+  # Data management
+  tidyverse
+)
+
+# Carga datos -------------------------------------------------------------
+df = import("base_cov_cancer.xlsx") %>% 
+  ### Variables categóricas a factor
+  mutate(across(is.character|matches("idpte")|matches("ecog_cat"), as.factor))
+```
+
+### Valores ausentes
+```{r}
+### Explora valores faltantes
+df %>% select(edad, edad_cat, sexo, starts_with("comorb"), icd10_cat_1, 
+              tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, metast_CA, 
+              mas_un_CA, dx_covid) %>% 
+  plot_na_pareto(only_na = T)
+```
+
+### Descripción de la muestra
+```{r}
+### Frecuencia variables muestra completa
+df %>% select(edad, edad_cat, sexo, starts_with("comorb"), icd10_cat_1, 
+              tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, metast_CA, 
+              mas_un_CA, dx_covid) %>% 
+  tbl_summary(missing = "no")
+```
+
+### Compara pacientes con y sin diagnóstico de COVID-19
+```{r}
+df %>% select(edad, edad_cat, sexo, starts_with("comorb"), icd10_cat_1, 
+              tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, metast_CA, 
+              mas_un_CA, dx_covid) %>% 
+  tbl_summary(missing = "no")
+
+### Frecuencia variables según diagnóstico COVID
+df %>% select(edad, edad_cat, sexo, starts_with("comorb"), 
+              tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, metast_CA, 
+              mas_un_CA, dx_covid) %>% 
+  tbl_summary(by = dx_covid, percent = "col", missing = "no") %>% 
+  bold_labels() %>% 
+  add_p() %>% 
+  bold_p()
+```
+
+## Análisis datos para pacientes con datos completos (n = 467)
+```{r}
+# Filtra datos con información comorbilidades -----------------------------
+df_comorb = df %>% select(idpte, edad, edad_cat, sexo, starts_with("comorb"),
+                          icd10_cat_1, tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, 
+                          metast_CA, mas_un_CA, dx_covid) %>% 
+  drop_na()
+
+### Regresiones logísticas univariadas
+df_comorb %>% select(edad, edad_cat, sexo, starts_with("comorb"),  
+              tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, metast_CA, 
+              mas_un_CA, dx_covid) %>% 
+  tbl_uvregression(y = dx_covid, method = glm,
+                   method.args = list(family = "binomial"), exponentiate = T) %>% 
+  bold_labels() %>% 
+  bold_p()
+```
+
