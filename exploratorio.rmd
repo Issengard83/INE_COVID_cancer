@@ -31,61 +31,60 @@ pacman::p_load(
 )
 
 # Carga datos -------------------------------------------------------------
-df = import("base_cov_cancer.xlsx") %>% 
+df = import("datos_CA_COVID_clean.xlsx") %>% 
   ### Variables categóricas a factor
-  mutate(across(is.character|matches("idpte")|matches("ecog_cat"), as.factor))
+  mutate(across(where(is.character)|matches("idpte"),
+                as.factor))
 ```
 
 ### Valores ausentes
 ```{r}
 ### Explora valores faltantes
-df %>% select(edad, edad_cat, sexo, starts_with("comorb"), icd10_cat_1, 
-              tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, metast_CA, 
-              mas_un_CA, dx_covid) %>% 
-  plot_na_pareto(only_na = T)
+df %>% plot_na_pareto(only_na = T)
 ```
+
+\pagebreak
 
 ### Descripción de la muestra
 ```{r}
 ### Frecuencia variables muestra completa
 df %>% select(edad, edad_cat, sexo, starts_with("comorb"), icd10_cat_1, 
-              tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, metast_CA, 
-              mas_un_CA, dx_covid) %>% 
+              tipo_CA_1, evol_CA_1, ecog, gravedad_CA, metastasis, 
+              mas_un_tumor, cat_dx_covid) %>% 
   tbl_summary(missing = "no")
 ```
+
+\pagebreak
 
 ### Compara pacientes con y sin diagnóstico de COVID-19
 ```{r}
-df %>% select(edad, edad_cat, sexo, starts_with("comorb"), icd10_cat_1, 
-              tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, metast_CA, 
-              mas_un_CA, dx_covid) %>% 
-  tbl_summary(missing = "no")
-
 ### Frecuencia variables según diagnóstico COVID
-df %>% select(edad, edad_cat, sexo, starts_with("comorb"), 
-              tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, metast_CA, 
-              mas_un_CA, dx_covid) %>% 
-  tbl_summary(by = dx_covid, percent = "col", missing = "no") %>% 
-  bold_labels() %>% 
+df %>% select(edad, edad_cat, sexo, starts_with("comorb"),  
+              tipo_CA_1, evol_CA_1, ecog, gravedad_CA, metastasis, 
+              mas_un_tumor, cat_dx_covid) %>% 
+  tbl_summary(by = cat_dx_covid, percent = "col", missing = "no") %>% 
   add_p() %>% 
-  bold_p()
+  bold_p() %>% 
+  bold_labels()
 ```
 
-## Análisis datos para pacientes con datos completos (n = 467)
+\pagebreak
+
+## Análisis datos para pacientes con datos completos (n = 321)
 ```{r}
 # Filtra datos con información comorbilidades -----------------------------
-df_comorb = df %>% select(idpte, edad, edad_cat, sexo, starts_with("comorb"),
-                          icd10_cat_1, tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, 
-                          metast_CA, mas_un_CA, dx_covid) %>% 
+df_comorb <- df %>% select(idpte, edad, edad_cat, sexo, starts_with("comorb"),
+                          icd10_cat_1, tipo_CA_1, evol_CA_1, ecog, gravedad_CA, 
+                          metastasis, mas_un_tumor, cat_dx_covid) %>% 
   drop_na()
 
-### Regresiones logísticas univariadas
-df_comorb %>% select(edad, edad_cat, sexo, starts_with("comorb"),  
-              tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, metast_CA, 
-              mas_un_CA, dx_covid) %>% 
-  tbl_uvregression(y = dx_covid, method = glm,
-                   method.args = list(family = "binomial"), exponentiate = T) %>% 
-  bold_labels() %>% 
-  bold_p()
+### Frecuencia variables según diagnóstico COVID
+df %>% select(edad, edad_cat, sexo, starts_with("comorb"),  
+              tipo_CA_1, evol_CA_1, ecog, gravedad_CA, metastasis, 
+              mas_un_tumor, cat_dx_covid) %>% 
+  tbl_summary(by = cat_dx_covid, percent = "col", missing = "no") %>% 
+  add_p() %>% 
+  bold_p() %>% 
+  bold_labels()
 ```
 

@@ -2,7 +2,7 @@
 ### Institucional de Tumores de Argentina del HIGA Alende, Mar del Plata, año 2020:
 ### incidencia, gravedad y mortalidad
 ### Autor: Tamara Ricardo
-### Última modificación: 2023-10-04
+### Última modificación: 2023-10-12
 
 # Carga paquetes ----------------------------------------------------------
 pacman::p_load(
@@ -25,9 +25,9 @@ pacman::p_load(
 )
 
 # Carga datos -------------------------------------------------------------
-df = import("base_cov_cancer.xlsx") %>% 
+df = import("datos_CA_COVID_clean.xlsx") %>% 
   ### Variables categóricas a factor
-  mutate(across(where(is.character)|matches("idpte")|matches("ecog_cat"),
+  mutate(across(where(is.character)|matches("idpte"),
                 as.factor))
 
 # Análisis exploratorio datos ---------------------------------------------
@@ -36,38 +36,35 @@ df %>% plot_na_pareto(only_na = T)
 
 ### Frecuencia variables muestra completa
 df %>% select(edad, edad_cat, sexo, starts_with("comorb"), icd10_cat_1, 
-              tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, metast_CA, 
-              dos_mas_CA, dx_covid) %>% 
+              tipo_CA_1, evol_CA_1, ecog, gravedad_CA, metastasis, 
+              mas_un_tumor, cat_dx_covid) %>% 
   tbl_summary(missing = "no")
 
 ### Frecuencia variables según diagnóstico COVID
 df %>% select(edad, edad_cat, sexo, starts_with("comorb"),  
-              tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, metast_CA, 
-              mas_un_CA, dx_covid) %>% 
-  tbl_summary(by = dx_covid, percent = "col", missing = "no") %>% 
+              tipo_CA_1, evol_CA_1, ecog, gravedad_CA, metastasis, 
+              mas_un_tumor, cat_dx_covid) %>% 
+  tbl_summary(by = cat_dx_covid, percent = "col", missing = "no") %>% 
   add_p() %>% 
   bold_p() %>% 
   bold_labels()
 
 # Filtra datos con información comorbilidades -----------------------------
 df_comorb <- df %>% select(idpte, edad, edad_cat, sexo, starts_with("comorb"),
-                          icd10_cat_1, tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, 
-                          metast_CA, dos_mas_CA, dx_covid) %>% 
+                          icd10_cat_1, tipo_CA_1, evol_CA_1, ecog, gravedad_CA, 
+                          metastasis, mas_un_tumor, cat_dx_covid) %>% 
   drop_na()
 
+### Frecuencia variables según diagnóstico COVID
+df %>% select(edad, edad_cat, sexo, starts_with("comorb"),  
+              tipo_CA_1, evol_CA_1, ecog, gravedad_CA, metastasis, 
+              mas_un_tumor, cat_dx_covid) %>% 
+  tbl_summary(by = cat_dx_covid, percent = "col", missing = "no") %>% 
+  add_p() %>% 
+  bold_p() %>% 
+  bold_labels()
 
-### Regresiones logísticas univariadas
-df_comorb %>% select(edad, edad_cat, sexo, starts_with("comorb"),  
-              tipo_CA_1, evol_CA_1, ecog_cat, grav_CA, metast_CA, 
-              dos_mas_CA, dx_covid) %>% 
-  tbl_uvregression(y = dx_covid, method = glm, exponentiate = T,
-                   method.args = list(family = "binomial")) %>% 
-  bold_labels() %>% 
-  bold_p()
-  
-# Incidencia COVID-19 -----------------------------------------------------
-### Agrupa datos
-df_incid <- df %>% 
-  count(edad_cat, sexo, tipo_CA_1, grav_CA,
-                            metast_CA, mas_un_CA, dx_covid) %>% 
-  filter(dx_covid=="POS")
+### Regresión logística univariada
+fit = glm(cat_dx_covid ~ edad, data = df_comorb, family = "binomial")
+
+tbl_regression(fit, exponentiate = T) # P = 0.14
