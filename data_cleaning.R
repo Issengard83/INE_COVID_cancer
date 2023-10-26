@@ -47,24 +47,32 @@ fechas_dx <- import("raw/Base CC Tamara.xlsx", na = "NA") %>%
 trat_clean <- import("raw/pedido MDQ 2020 envío.xlsx", sheet = 1) %>% 
   ## Añade fechas radioterapia
   left_join(import("raw/pedido MDQ 2020 envío.xlsx", sheet = 2)) %>% 
-  # Limpia nombres variables
+  ## Limpia nombres variables
   clean_names() %>% 
   rename(fecha_ini_rtx = fecha_inicio_tratramiento,
          trat_rtx = radio,
          trat_quimio = quimio) %>% 
-  # Modifica niveles variables
+  ## Modifica niveles variables
   mutate_if(is.character, str_to_title) %>% 
   mutate_at("dni", as.numeric) %>%
-  # Crea variable para quimio y radioterapia
+  ## Crea variable para quimio y radioterapia
   mutate(trat_quimio_rtx = if_else(trat_quimio=="Si" & trat_rtx=="Si", "Si", "No")) %>% 
-  # Filtra datos fuera del período 2018-2020
+  ## Filtra datos fuera del período 2018-2020
   filter((fecha_ini_rtx>="2018-01-01" & fecha_ini_rtx<="2020-12-31")|is.na(fecha_ini_rtx)) %>% 
-  # Filtra variables innecesarias
+  ## Filtra variables innecesarias
   select(-sexo, -tipo_radioterapia) %>% 
-  # Filtra duplicados
+  ## Filtra duplicados
   distinct() %>% 
-  filter(!(dni=="94114884" & trat_quimio=="No"))
-
+  filter(!(dni=="94114884" & trat_quimio=="No")) %>% 
+  ## Añade filas nuevas
+  bind_rows(
+    tibble(dni = c(12363058, 24914304, 28295672, 40301188),
+           trat_quimio = rep("Si", 4),
+           trat_rtx = rep("Si", 4),
+           trat_quimio_rtx = rep("Si", 4),
+           fecha_ini_rtx = c("2020-09-10", "2020-09-10", "2020-10-14", "2020-12-10") %>% 
+             convert_to_date()
+  ))
 
 # Carga y limpia datos quimioterapia --------------------------------------
 quim_clean <- import("raw/pedido MDQ 2020 envío.xlsx", sheet = 4) %>% 
