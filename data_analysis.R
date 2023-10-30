@@ -2,7 +2,7 @@
 ### Institucional de Tumores de Argentina del HIGA Alende, Mar del Plata, año 2020:
 ### incidencia, gravedad y mortalidad
 ### Autor: Tamara Ricardo
-### Última modificación: 2023-10-12
+### Última modificación: 
 
 # Carga paquetes ----------------------------------------------------------
 pacman::p_load(
@@ -16,11 +16,11 @@ pacman::p_load(
   compareGroups,
   gtsummary,
   dlookr,
-  # Read files
-  rio,
-  # Data cleaning
-  janitor,
+  # Plot tools
+  survminer,
   # Data management
+  rio,
+  janitor,
   tidyverse
 )
 
@@ -28,30 +28,172 @@ pacman::p_load(
 data <- import("datos_CA_COVID_clean.xlsx") %>% 
   ### Variables categóricas a factor
   mutate(across(where(is.character)|matches("idpte"),
-                as.factor))
+                as.factor)) %>%
+  ## Cambia nivel de referencia
+  mutate_at("tipo_CA1", .funs = ~ fct_relevel(.x, "Sólido")) %>% 
+  ## COVID durante estudio (numérico)
+  mutate(covid_est_num = if_else(dx_covid_estudio=="Si", 1, 0))
 
-
-# Crea base para análisis supervivencia -----------------------------------
-data_surv <- data %>% select(idpte, dx_covid_estudio, meses_CA1_covid) %>% 
-  mutate(dx_covid_estudio = if_else(dx_covid_estudio=="Si", 1, 0))
-
-# Análisis exploratorio datos ---------------------------------------------
 ### Explora valores faltantes
 data %>% plot_na_pareto(only_na = T)
 
+# Análisis exploratorio datos ---------------------------------------------
 ### Frecuencia variables muestra completa
-data %>% select(edad, edad_cat, sexo, starts_with("comorb"), icd10_cat_1, 
-              tipo_CA_1, evol_CA_1, ecog, gravedad_CA, metastasis, mas_un_tumor, 
-              trat_quimio, trat_rtx, trat_quimio_rtx, n_ciclos_quimio, dx_covid_estudio) %>% 
-  tbl_summary(missing = "no")
+data %>% 
+  tbl_summary(missing = "no",
+              include = c(sexo, edad, edad_cat, starts_with("comorb"),
+                          icd10_cat1, tipo_CA1, evol_CA1, ecog_num,
+                          gravedad_CA, mas_un_tumor, metastasis,
+                          trat_quimio_rtx, trat_rtx, trat_quimio,
+                          ciclos_quimio, dx_covid_estudio))
+
 
 ### Test asociación según diagnóstico de COVID
-data %>% select(edad, edad_cat, sexo, 
-                comorb_met, comorb_cvg, comorb_res, comorb_hiv, comorb_alc, comorb_tab,
-                tipo_CA_1, evol_CA_1, ecog, gravedad_CA, metastasis, mas_un_tumor, 
-                trat_quimio, trat_rtx, trat_quimio_rtx, dx_covid_estudio) %>% 
-  tbl_summary(by = dx_covid_estudio, percent = "col", missing = "no") %>% 
+data %>% 
+  tbl_summary(by = dx_covid_estudio,
+              missing = "no", percent = "col",
+              include = c(sexo, edad, edad_cat, comorb_met, comorb_cvg, 
+                          comorb_res, comorb_hiv, comorb_alc, comorb_tab,
+                          icd10_cat1, tipo_CA1, evol_CA1, ecog_num,
+                          gravedad_CA, mas_un_tumor, metastasis,
+                          trat_quimio_rtx, trat_rtx, trat_quimio,
+                          ciclos_quimio)) %>% 
   add_p() %>% 
   bold_p() %>% 
   bold_labels()
 
+# Análisis supervivencia (no paramétrico) ---------------------------------
+### Crea objeto supervivencia
+surv <- with(data, Surv(dias_ini_covid, covid_est_num))
+
+### Modelo solo intercepto
+fit<- survfit(surv ~ 1, data = data)
+
+fit
+
+## Gráfico
+ggsurvplot(fit = fit, data = data, conf.int = T, ylim = c(.75,1))
+
+
+# Supervivencia por sexo --------------------------------------------------
+fit_sex <- survfit(surv ~ sexo, data = data)
+
+## Gráfico
+ggsurvplot(fit = fit_sex, data = data, conf.int = T, ylim = c(.75,1), 
+           risk.table = T)
+
+## Compara funciones
+survdiff(surv ~ sexo, data = data) # p= 0.4
+
+
+# Supervivencia por grupo etario ------------------------------------------
+fit_edad <- survfit(surv ~ edad_cat, data = data)
+
+## Gráfico
+ggsurvplot(fit = fit_edad, data = data, conf.int = T, ylim = c(.75,1), 
+           risk.table = T)
+
+## Compara funciones
+survdiff(surv ~ edad_cat, data = data) # p= 0.2
+
+
+# Supervivencia por tipo de cáncer ----------------------------------------
+### Sólido vs hematológico
+fit_tipo <- survfit(surv ~ tipo_CA1, data = data)
+
+## Gráfico
+ggsurvplot(fit = fit_tipo, data = data, conf.int = T, ylim = c(.75,1), 
+           risk.table = T)
+
+## Compara funciones
+survdiff(surv ~ tipo_CA1, data = data) # p= 0.06
+
+### Topografía icd10
+fit_topo <- survfit(surv ~ icd10_cat1, data = data)
+
+## Gráfico
+ggsurvplot(fit = fit_topo, data = data, conf.int = T, ylim = c(.75,1), 
+           risk.table = F)
+
+## Compara funciones
+survdiff(surv ~ icd10_cat1, data = data) # p= 0.6
+
+# Supervivencia por tipo tratamiento --------------------------------------
+fit_trat <- survfit(surv ~ trat_quimio_rtx, data = data)
+
+## Gráfico
+ggsurvplot(fit = fit_trat, data = data, conf.int = T, ylim = c(.75,1), 
+           risk.table = T)
+
+## Compara funciones
+survdiff(surv ~ trat_quimio_rtx, data = data) # p= 0.04*
+
+### Quimioterapia
+fit_quim <- survfit(surv ~ trat_quimio, data = data)
+
+## Gráfico
+ggsurvplot(fit = fit_quim, data = data, conf.int = T, ylim = c(.75,1), 
+           risk.table = T)
+
+## Compara funciones
+survdiff(surv ~ trat_quimio, data = data) # p= 0.01*
+
+
+# Supervivencia por gravedad ----------------------------------------------
+### Más de un tumor
+fit_mas <- survfit(surv ~ mas_un_tumor, data = data)
+
+## Gráfico
+ggsurvplot(fit = fit_mas, data = data, conf.int = T, ylim = c(.75,1), 
+           risk.table = T)
+
+## Compara funciones
+survdiff(surv ~ mas_un_tumor, data = data) # p= 0.6
+
+### Metástasis
+fit_met <- survfit(surv ~ metastasis, data = data)
+
+## Gráfico
+ggsurvplot(fit = fit_met, data = data, conf.int = T, ylim = c(.75,1), 
+           risk.table = T)
+
+## Compara funciones
+survdiff(surv ~ metastasis, data = data) # p= 0.8
+
+### Gravedad del cáncer
+fit_grav <- survfit(surv ~ gravedad_CA, data = data)
+
+## Gráfico
+ggsurvplot(fit = fit_grav, data = data, conf.int = T, ylim = c(.75,1), 
+           risk.table = T)
+
+## Compara funciones
+survdiff(surv ~ gravedad_CA, data = data) # p= 0.7
+
+
+# Regresión de Cox --------------------------------------------------------
+### Modelo full
+fit_cox <- coxph(surv ~ tipo_CA1 + trat_quimio, data = data)
+
+summary(fit_cox)
+
+### Modelo s/ tipo cáncer
+fit_cox1 <- update(fit_cox, ~.-tipo_CA1)
+
+## Compara modelos
+anova(fit_cox, fit_cox1)
+
+## AIC
+performance(fit_cox1, metrics = "common")
+
+## Coeficientes
+tbl_regression(fit_cox1, exponentiate = T)
+
+## Gráfico
+ggadjustedcurves(fit = fit_cox1, data = data, 
+                 variable = "trat_quimio", ylim = c(.75, 1))
+
+## Residuales
+ggcoxdiagnostics(fit_cox1, type = "schoenfeld")
+
+ggcoxdiagnostics(fit_cox1, type = "martingale")
