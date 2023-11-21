@@ -3,6 +3,7 @@
 ### incidencia, gravedad y mortalidad
 ### Autor: Tamara Ricardo
 ### Última modificación: 
+# Mon Oct 30 11:54:06 2023 ------------------------------
 
 # Carga paquetes ----------------------------------------------------------
 pacman::p_load(
@@ -51,7 +52,7 @@ data %>%
 ### Test asociación según diagnóstico de COVID
 data %>% 
   tbl_summary(by = dx_covid_estudio,
-              missing = "no", percent = "col",
+              missing = "no", percent = "row",
               include = c(sexo, edad, edad_cat, comorb_met, comorb_cvg, 
                           comorb_res, comorb_hiv, comorb_alc, comorb_tab,
                           icd10_cat1, tipo_CA1, evol_CA1, ecog_num,
