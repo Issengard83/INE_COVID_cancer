@@ -3,7 +3,8 @@
 ### año 2020: incidencia, gravedad y mortalidad
 ### Autor: Tamara Ricardo
 ### Última modificación:
-# Tue Nov 21 12:22:27 2023 ------------------------------
+# Wed Nov 22 14:16:46 2023 ------------------------------
+
 
 # Carga paquetes ----------------------------------------------------------
 pacman::p_load(
@@ -30,14 +31,23 @@ data_clean <- data_raw %>%
   ## Limpia nombres de variables
   clean_names() %>% 
   ## Renombra variables
-  rename_with(.cols = starts_with("co") & !matches("compn"), 
-              .fn = ~str_replace_all(.x, "co", "comorb_")) %>% 
   rename(sexo = ptesxn_x,
          dni = ndoc,
-         evol_CA = evolucion,
+         co_metabolica = comet,
+         co_cardiovascular = cocvg,
+         co_respiratoria = cores,
+         co_renal = corin,
+         co_neurologica = coneu,
+         co_HIV = cohiv,
+         co_hepat_B = coheb,
+         co_hepat_C = cohec,
+         co_H_pylori = cohep,
+         co_alcoholismo = coalc,
+         co_tabaquismo = cotab,
          icd10_cod = tpgf,
          icd10_desc = tpgfn,
-         tipo_CA = tipo_de_cancer,
+         tipo_cancer = tipo_de_cancer,
+         evol_cancer = evolucion,
          fecha_dx_covid = fecha_apertura,
          dx_covid = clasificacion_manual) %>% 
   ## Filtra casos de tumores benignos
@@ -47,13 +57,13 @@ data_clean <- data_raw %>%
   ## Modifica niveles sexo biológico
   mutate_at("sexo", .funs = ~if_else(.x=="Mujer", "Femenino", "Masculino")) %>% 
   ## Modifica niveles tipo de tumor
-  mutate_at(.vars = "tipo_CA", 
+  mutate_at(.vars = "tipo_cancer", 
             .funs = ~if_else(grepl("S", .x), "Sólido", "Hematológico")) %>% 
   ## Modifica niveles comorbilidades
-  mutate_at(vars(starts_with("co")), .funs = ~if_else(.x==1, 1, 0)) %>%
-  ## Código morfología icdO3
-  separate(mfgn, into = c("icdO3_cod", "icdO3_cat"), sep = "-", extra = "merge") %>% 
-  mutate_at("icdO3_cod", .funs = ~str_sub(.x, start = 2, end = 5)) %>%
+  mutate_at(vars(starts_with("co_")), .funs = ~if_else(.x==1, 1, 0)) %>%
+  ## Código morfología icdo3
+  separate(mfgn, into = c("icdo3_cod", "icdo3_desc"), sep = "-", extra = "merge") %>% 
+  mutate_at("icdo3_cod", .funs = ~str_sub(.x, start = 2, end = 5)) %>%
   ## Código topografía icd10
   mutate_at(.vars = "icd10_cod", .funs = ~str_sub(.x, start = 1, end = 3)) %>% 
   ## Ecog numérica
@@ -75,18 +85,9 @@ fechas_dx <- import("raw/Base CC Tamara.xlsx", na = "NA") %>%
   # Crea columna para fecha segundo diagnóstico
   pivot_wider(values_from = fedg,
               names_from = n,
-              names_prefix = "fecha_dx_CA") %>% 
+              names_prefix = "fecha_dx_cancer_") %>% 
   # Filtra fechas diagnóstico posteriores a marzo 2020
-  filter(fecha_dx_CA1<"2020-03-03")
-
-
-# Carga/limpia categorías icd10 -------------------------------------------
-icd10 <- icd.data::icd10cm2016 %>% 
-  # Filtra datos cáncer
-  filter(chapter=="Neoplasms") %>% 
-  # Elimina duplicados  
-  distinct_at("three_digit", .keep_all = T) %>% 
-  droplevels()
+  filter(fecha_dx_cancer_1<"2020-03-03")
 
 
 # Carga/limpia datos tratamientos -----------------------------------------
@@ -115,14 +116,8 @@ trat_quim <- import("raw/pedido MDQ 2020 envío.xlsx", sheet = 4) %>%
   ## Quita duplicados
   select(dni, edad_prescripcion, fecha_carga) %>% 
   distinct() %>% 
-  # ## Filtra fechas tratamiento fuera del período 2018-2020
-  # filter(fecha_carga>="2018-01-01" & fecha_carga<="2020-12-31") %>% 
   ## Filtra fechas tratamiento fuera del período 2020
   filter(fecha_carga>="2020-01-01" & fecha_carga<="2020-12-31") %>% 
-  # ## Días entre quimio y diagnóstico COVID
-  # mutate(dias_quim_covid = if_else(fecha_dx_covid>fecha_carga,
-  #                                  interval(fecha_carga, fecha_dx_covid) %>% 
-  #                                    as.duration() %/% ddays(), NA)) %>% 
   ## Agrupa datos
   group_by(dni) %>% 
   ## Sumariza datos
@@ -162,92 +157,109 @@ trat_quim_rtx <- import("raw/pedido MDQ 2020 envío.xlsx", sheet = 1) %>%
     trat_quimio=="No" & trat_rtx=="Si" ~ "Radioterapia",
     TRUE ~ "Ninguno"))
 
-### Clean environment
-rm(trat_quim, trat_rtx)
 
-
-# Añade datos tratamientos y quita duplicados -----------------------------
-data_clean_nd <- data_clean %>% 
-  ## Añade categorías ICD10
-  left_join(., icd10 %>% select(three_digit, sub_chapter),
-            by = c("icd10_cod"="three_digit")) %>% 
-  # Corrige nivel faltante icd10
-  mutate(icd10_cat = ifelse(icd10_cod=="C42", 
-                            "Leukemias and related conditions", 
-                            str_to_sentence(sub_chapter))) %>% 
-  ## Filtra pacientes sin fecha de diagnóstico cáncer
+# Añade datos tratamientos ------------------------------------------------
+data_clean <- data_clean %>% 
+  ## Filtra pacientes sin fecha diagnóstico cáncer
   inner_join(fechas_dx) %>% 
   ## Añade datos tratamientos cáncer y fechas
   inner_join(., trat_quim_rtx) %>%
   ## Variables categóricas a factor
   mutate(across(where(is.character)|matches("idpte"), .fns = as.factor)) %>% 
-  ### Ordena por fecha diagnóstico COVID
-  arrange(idpte, desc(dx_covid), desc(fecha_dx_covid)) %>% 
-  ### Quita múltiples tests de COVID
-  group_by(across(idpte:dni), fecha_nacimiento,
-           across(starts_with("comorb")),
-           across(starts_with("icd10")),
-           across(starts_with("icdO3")),
-           across(tipo_CA:ecog), 
+  ## Ordena por fecha diagnóstico COVID
+  arrange(idpte, desc(dx_covid), desc(fecha_dx_covid))
+
+
+# Quita duplicados covid --------------------------------------------------
+data_clean_nd <- data_clean %>% 
+  ## Quita duplicados test COVID
+  group_by(across(idpte:dni), 
+           fecha_nacimiento, 
+           across(starts_with("co_")), 
+           across(starts_with("icd")),
+           across(tipo_cancer:ecog),
            across(contains("quimio")),
            across(contains("rtx"))) %>% 
   filter(row_number()==1) %>% 
   ungroup() %>% 
   ### Corrige dato faltante evolución cáncer
-  mutate(evol_CA = if_else(idpte=="83480" & is.na(evol_CA), 
-                           "Localizado", evol_CA)) %>% 
-  ### Sumariza datos de múltiples tumores
-  reframe(icd10_cod1 = first(icd10_cod),
-          icd10_cat1 = first(icd10_cat),
-          icd10_desc1 = first(icd10_desc),
-          icdO3_cod1 = first(icdO3_cod),
-          icdO3_cat1 = first(icdO3_cat),
-          tipo_CA1 = first(tipo_CA),
-          evol_CA1 = first(evol_CA),
-          icd10_cod2 = if_else(duplicated(idpte), last(icd10_cod), NA),
-          icd10_cat2 = if_else(duplicated(idpte), last(icd10_cat), NA),
-          icd10_desc2 = if_else(duplicated(idpte), last(icd10_desc), NA),
-          icdO3_cod2 = if_else(duplicated(idpte), last(icdO3_cod), NA),
-          icdO3_cat2 = if_else(duplicated(idpte), last(icdO3_cat), NA),
-          tipo_CA2 = if_else(duplicated(idpte), last(tipo_CA), NA),
-          evol_CA2 = if_else(duplicated(idpte), last(evol_CA), NA),
-          ecog_num = max(ecog_num, na.rm = F),
-          .by = c(idpte:dni, fecha_nacimiento,
-                  starts_with("comorb"),
-                  fecha_dx_CA1, fecha_dx_CA2,
-                  contains("quimio"),
-                  contains("rtx"),
-                  contains("covid"))) %>% 
-  ## Quita duplicados
-  arrange(idpte, desc(dx_covid_estudio)) %>% 
-  group_by(idpte) %>% 
-  filter(row_number()==1) %>% 
-  ungroup() %>% 
-  ## Descarta niveles vacíos
-  mutate_if(is.factor, fct_drop) 
+  mutate(evol_cancer = if_else(idpte=="83480" & is.na(evol_cancer), 
+                             "Localizado", evol_cancer)) %>% 
+  ### Corrige error de carga tipo cáncer
+  mutate(tipo_cancer = if_else(icd10_cod=="C42", "Hematológico", 
+                               tipo_cancer))
 
-# Crea nuevas variables ---------------------------------------------------
-data_clean_nv <- data_clean_nd %>% 
+
+# Sumariza pacientes con múltiples tumores --------------------------------
+data_clean_mt <- data_clean_nd %>% 
+  reframe(
+    ## Clasificación ICD10
+    icd10_cod_1 = first(icd10_cod),
+    icd10_cod_2 = if_else(duplicated(idpte), last(icd10_cod), NA),
+    icd10_desc_1 = first(icd10_desc),
+    icd10_desc_2 = if_else(duplicated(idpte), last(icd10_desc), NA),
+    ## Clasificación icdo3
+    icdo3_cod_1 = first(icdo3_cod),
+    icdo3_cod_2 = if_else(duplicated(idpte), last(icdo3_cod), NA),
+    icdo3_desc_1 = first(icdo3_desc),
+    icdo3_desc_2 = if_else(duplicated(idpte), last(icdo3_desc), NA),
+    ## Tipo tumor
+    tipo_cancer = if_else(idpte %in% c("78952","91477"), 
+                          "Ambos", first(tipo_cancer)) %>% as.factor(),
+    ## Evolución del cáncer
+    evol_cancer = first(evol_cancer) %>% as.factor(),
+    ## Escala ECOG
+    ecog_num = max(ecog_num, na.rm = F),
+    ## Variables de agrupamiento
+    .by = c(idpte:dni, 
+            fecha_nacimiento,
+            starts_with("co_"),
+            fecha_dx_cancer_1, 
+            fecha_dx_cancer_2,
+            contains("quimio"),
+            contains("rtx"),
+            contains("covid"))) %>% 
+  ## Quita duplicados
+  arrange(idpte, desc(dx_covid_estudio), icd10_cod_2) %>% 
+  group_by(idpte) %>% 
+  mutate(n = row_number()) %>% 
+  filter(n==1) %>% 
+  ## Variables categóricas a factor
+  mutate_if(is.factor, fct_drop)
+
+### Limpia environment
+rm(list = setdiff(ls(), "data_clean_mt"))
+
+### Tabla exploratoria icd10
+tab<- fct_count(data_clean_mt$icd10_cod_1) %>% 
+  arrange(desc(f))
+
+# Crea variables para el análisis -----------------------------------------
+data_clean_nv <- data_clean_mt %>% 
   ## Edad y grupo etario
   mutate(edad = 2020 - year(fecha_nacimiento),
          edad_cat = age_categories(edad, breakers = c(18, 40, 60, 80)),
-         edad_dx = interval(fecha_nacimiento, fecha_dx_CA1) %>% 
+         edad_dx = interval(fecha_nacimiento, fecha_dx_cancer_1) %>% 
            as.duration() %/% dyears()) %>% 
   ## Gravedad del cáncer
   mutate(
-    mas_un_tumor = if_else(!is.na(fecha_dx_CA2), "Si", "No"), 
+    ## Más de un tumor
+    mas_un_tumor = if_else(!is.na(icd10_cod_2), "Si", "No"),
+    ## Metástasis
     metastasis = case_when(
-      grepl("metas", icdO3_cat1) & !grepl("inc", icdO3_cat1) ~ "Si",
-      grepl("metas", icdO3_cat2) & !grepl("inc", icdO3_cat2) ~ "Si",
-      grepl("Dist", evol_CA1) | grepl("Dist", evol_CA2) ~ "Si",
+      evol_cancer=="Distante" ~ "Si",
+      grepl("metas", icdo3_desc_1) & !grepl("inc", icdo3_desc_1) ~ "Si",
+      grepl("metas", icdo3_desc_2) & !grepl("inc", icdo3_desc_2) ~ "Si",
       TRUE ~ "No"),
-    gravedad_CA = if_else(mas_un_tumor=="Si"|
-                            metastasis=="Si"|
-                            grepl("Dist|Reg", evol_CA1), "Grave", "Leve")
-  ) %>% 
+    ## Cáncer severo
+    gravedad = if_else(mas_un_tumor=="Si"|
+                          metastasis=="Si"|
+                          evol_cancer %in% c("Distante","Regionalizado")|
+                          ecog_num>1,
+                        "Grave", "Leve")) %>% 
   ## Tiempo entre diagnóstico de cáncer y diagnóstico COVID
-  mutate(dias_CA_covid = if_else(dx_covid_estudio=="Si",
-                                 interval(fecha_dx_CA1, fecha_dx_covid) %>% 
+  mutate(dias_cancer_covid = if_else(dx_covid_estudio=="Si",
+                                 interval(fecha_dx_cancer_1, fecha_dx_covid) %>% 
                                    as.duration() %/% ddays(), NA)) %>% 
   ## Tiempo entre última quimio y diagnóstico COVID
   mutate(dias_quim_covid = if_else(dx_covid_estudio=="Si",
@@ -262,33 +274,44 @@ data_clean_nv <- data_clean_nd %>%
   mutate(across(starts_with("fecha"), .fns = convert_to_date)) %>% 
   ## Comorbilidades
   rowwise() %>%
-  mutate(comorb_na = sum(c_across(comorb_met:comorb_tab) %>% is.na),
-         comorb_n = if_else(comorb_na<11, sum(c_across(comorb_met:comorb_tab), na.rm = T), NA),
-         comorb_n_cat = case_when(
+  mutate(
+    comorb_na = sum(c_across(co_metabolica:co_tabaquismo) %>% is.na),
+    comorb_n = if_else(comorb_na<11, sum(c_across(co_metabolica:co_tabaquismo), na.rm = T), NA),
+    comorb_n = case_when(
            comorb_n==0 ~ "Sin comorbilidades",
            comorb_n==1 ~ "Una comorbilidad",
            comorb_n>1 ~ "Dos o más comorbilidades",
            is.na(comorb_n) ~ "Desconocido"),
-         across(c("comorb_met":"comorb_tab"), ~ if_else(.x==1, "Si", "No"))) %>% 
-  ## Ordena variables
-  select(idpte, fecha_nacimiento, edad, edad_cat, sexo, starts_with("comorb"), -comorb_na,
-         fecha_dx_CA1, edad_dx, ends_with("1"), fecha_dx_CA2, ends_with("2"),
-         ecog_num, mas_un_tumor, metastasis, gravedad_CA,
-         ends_with("_rtx"), ends_with("_quimio"), trat_quimio_rtx,
-         fecha_dx_covid, dx_covid, dx_covid_estudio, 
-         dias_CA_covid, dias_quim_covid, dias_ini_covid)
+    across(c("co_metabolica":"co_tabaquismo"), ~ if_else(.x==1, "Si", "No"))) %>% 
+  ## Clasificación ICD10
+  mutate(icd10_loc_ppal = case_when(
+    icd10_cod_1=="C16" ~ "Estómago",
+    icd10_cod_1=="C18" ~ "Colon",
+    icd10_cod_1=="C20" ~ "Recto",
+    icd10_cod_1=="C34" ~ "Bronquio y pulmón",
+    icd10_cod_1=="C44" ~ "Piel",
+    icd10_cod_1=="C50" ~ "Mama",
+    icd10_cod_1=="C53" ~ "Cuello uterino",
+    icd10_cod_1=="C77" ~ "Ganglios linfáticos",
+    icd10_cod_1 %in% c("C01","C02","C03","C06","C08","C11","C12","C13") ~ "Boca, cavidad bucal y faringe",
+    icd10_cod_1 %in% c("C60","C61","C62") ~ "Genitales masculinos",
+    icd10_cod_1 %in% c("C64","C68") ~ "Aparato urinario",
+    icd10_cod_1 %in% c("C73","C75") ~ "Tiroides y glándulas endócrinas",
+    TRUE ~ "Otro/s"
+  ))
+
+
+# Ordena variables --------------------------------------------------------
+data_clean <- data_clean_nv %>% 
+  select(idpte, sexo, fecha_nacimiento, edad, edad_cat, 
+         starts_with("co_"), comorb_n, ends_with("_1"), ends_with("_2"), icd10_loc_ppal,
+         tipo_cancer, evol_cancer, ecog_num, mas_un_tumor, metastasis, gravedad,
+         ends_with("quimio"), ends_with("rtx"), contains("covid"))
+
 
 # Guarda datos ------------------------------------------------------------
-export(data_clean_nv, "datos_CA_COVID_clean.xlsx")
+export(data_clean, "datos_CA_COVID_clean.xlsx")
 
-
-# # Diccionario de datos ----------------------------------------------------
-# ## Crea nuevo diccionario de datos
-# desc_data_clean <- tibble(variable = colnames(data_clean_nd),
-#                           descripcion = NA_character_)
-# 
-# # Guarda
-# export(desc_data_clean, "diccionario_datos_clean.xlsx")
 
 ### Limpia environment
 rm(list = ls())
